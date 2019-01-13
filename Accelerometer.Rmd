@@ -1,0 +1,76 @@
+---
+title: "Machine Learning"
+author: "Anuj Gupta"
+date: "January 13, 2019"
+---
+
+This is a R Markdown document. The purpose here is to use accelometer variables (predictors) to determine classe variables (outcome).
+Here we will build a model to predict the variable classe (outcome) using training dataset. This model will finally be used to determine the classe variable in testing dataset.
+
+
+```{r setup, include=FALSE}
+library(caret)
+library(dplyr)
+library(randomForest)
+library(rpart)
+library(C50)
+```
+
+## Data Processing
+
+The first step is to read the csv file for training and testing data in R. We will be removing all the columns having missing values from the dataset. Also we will be concentrating only on accelerometer variables (predictors) to build our model.
+
+```{r DataProcessing}
+pml_train <- read.csv("pml-training.csv",stringsAsFactors = T, na.strings = c("?", NA, "NA", " ", NULL, "#DIV/0!"))
+pml_test <- read.csv("pml-testing.csv", stringsAsFactors = T,na.strings = c("?", NA, "NA", " ", NULL, "#DIV/0!"))
+filter_col <- colSums(is.na(pml_train)) == 0 & grepl("classe|belt|arm|dumbell", names(pml_train)) 
+#str(pml_train, list.len=ncol(pml_train))
+```
+
+## CrossValidation
+
+We will be using the random sampling cross-validation technique to divide our training data into train and test subsets to build and validate our model respectively.
+
+```{r Crossvaidation}
+inTrain <- createDataPartition(y= pml_train$classe, p= 0.7, list = FALSE)
+train <- pml_train[inTrain,filter_col]
+test <- pml_train[-inTrain,filter_col]
+```
+
+## Model-1
+
+The first model we will try to build will be using Decision Trees algorithm.
+Here we will convert all possible correlated variables into a set of uncorrelated variables using Principal component analysis.
+
+```{r PCA}
+set.seed(100)
+prin_comp <- prcomp(train[,-40], scale. = T)
+std_dev <- prin_comp$sdev
+pr_var <- std_dev^2
+prop_varex <- pr_var/sum(pr_var)
+plot(prop_varex, xlab = "Principal Component", ylab = "Proportion of Variance Explained", type = "b")
+plot(cumsum(prop_varex), xlab = "Principal Component", ylab = "Cumulative Proportion of Variance Explained",type = "b")
+train.data <- data.frame(classe = train$classe, prin_comp$x)
+train.data <- train.data[,1:28]
+test.data <- predict(prin_comp, newdata = test)
+test.data <- as.data.frame(test.data)
+test.data <- test.data[,1:28]
+model <- rpart(classe ~ .,data = train.data, method="class")
+prediction <- predict(model, test.data, type="class")
+confusionMatrix(prediction, test$classe)
+```
+
+## Model-2
+
+The second model we will try to build will be using Random Forest algorithm with all accelerometer predictors.
+
+```{r Model1}
+set.seed(200)
+modfit <- randomForest(classe ~ ., data = train, ntree = 50, prox = TRUE)
+pr <- predict(modfit, newdata = test)
+confusionMatrix(pr, test$classe)
+```
+
+## Inference
+
+From the confusionMatrix of the two models, we can confirm that Model 2 has the highest accuracy (~99%). Hence we will be using this model to predict the classe variable from testing set.
